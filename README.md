@@ -337,3 +337,7 @@ pub struct ApiResponse<T> {
 ## license 许可证
 
 GNU General Public License v3.0
+
+## 自动构建（本 fork）
+
+本 fork 在上游基础上加了自动构建：每次 push 到 main 会自动构建 OTA 固件并更新 `latest` 预发布（下载地址：https://github.com/huxuesen/project-cpe/releases/tag/latest ），打 `v*` 标签会出正式 Release。构建定义见 `.github/workflows/build-ota.yml`。
