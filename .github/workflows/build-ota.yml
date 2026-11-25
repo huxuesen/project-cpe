@@ -319,8 +319,8 @@ jobs:
             echo "| 版本 | ${{ steps.version.outputs.version }} |"
             echo "| Commit | ${{ github.sha }} |"
             echo "| 架构 | aarch64-unknown-linux-musl |"
-            echo "| 触发 | ${{ github.event_name }} (`${{ github.ref }}`) |
-            echo "| UPX 压缩 | ${{ inputs.use_upx != false }} |""
+            echo "| 触发 | ${{ github.event_name }} (${{ github.ref }}) |"
+            echo "| UPX 压缩 | ${{ inputs.use_upx != false }} |"
             echo ""
             echo "### 产物"
             echo "- \`${{ steps.package.outputs.ota_file }}\`"
