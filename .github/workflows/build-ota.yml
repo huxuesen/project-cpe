@@ -1,6 +1,11 @@
 name: Build OTA Package
 
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       use_upx:
@@ -13,6 +18,13 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ota-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-ota:
@@ -44,7 +56,7 @@ jobs:
           musl-gcc --version
 
       - name: Install UPX
-        if: inputs.use_upx == true
+        if: ${{ inputs.use_upx != false }}
         run: |
           sudo apt-get install -y upx-ucl
           upx --version
@@ -95,7 +107,7 @@ jobs:
           file "$BINARY_PATH"
 
       - name: Compress binary with UPX
-        if: inputs.use_upx == true
+        if: ${{ inputs.use_upx != false }}
         run: |
           BINARY_PATH="backend/target/aarch64-unknown-linux-musl/release/udx710"
 
@@ -221,26 +233,65 @@ jobs:
 
           echo "ota_file=$OTA_FILE" >> "$GITHUB_OUTPUT"
           echo "ota_md5=$OTA_MD5" >> "$GITHUB_OUTPUT"
+          echo "build_time=$BUILD_TIME" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
       - name: Upload OTA package
         uses: actions/upload-artifact@v6
         with:
-          name: udx710-ota-${{ steps.version.outputs.version }}
+          name: udx710-ota-${{ steps.version.outputs.version }}-${{ steps.package.outputs.commit }}
           path: release/udx710-ota-${{ steps.version.outputs.version }}.tar.gz
           retention-days: 90
           if-no-files-found: error
+
+      - name: Publish rolling latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build (main)
+          files: release/udx710-ota-${{ steps.version.outputs.version }}.tar.gz
+          body: |
+            ## 最新自动构建（main 分支）
+
+            **版本**: ${{ steps.version.outputs.version }}
+            **Commit**: ${{ github.sha }}
+            **构建时间**: ${{ steps.package.outputs.build_time }}
+            **OTA MD5**: `${{ steps.package.outputs.ota_md5 }}`
+
+            每次推送到 main 自动更新，非正式发版。正式版本请看带 `v` 前缀的 Release。
+
+            ### 安装说明
+
+            ```bash
+            curl -X POST http://192.168.66.1:3000/api/ota/upload \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@udx710-ota-${{ steps.version.outputs.version }}.tar.gz"
+
+            curl -X POST http://192.168.66.1:3000/api/ota/apply \
+              -H "Content-Type: application/json" \
+              -d '{"restart_now":true}'
+            ```
+          draft: false
+          prerelease: true
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: release/udx710-ota-${{ steps.version.outputs.version }}.tar.gz
+          tag_name: ${{ github.ref_name }}
+          name: udx710 OTA v${{ steps.version.outputs.version }}
           body: |
             ## OTA 更新包
 
             **版本**: ${{ steps.version.outputs.version }}
             **Commit**: ${{ github.sha }}
-            **构建时间**: ${{ github.event.repository.updated_at }}
+            **构建时间**: ${{ steps.package.outputs.build_time }}
+            **OTA MD5**: `${{ steps.package.outputs.ota_md5 }}`
 
             ### 安装说明
 
@@ -268,7 +319,8 @@ jobs:
             echo "| 版本 | ${{ steps.version.outputs.version }} |"
             echo "| Commit | ${{ github.sha }} |"
             echo "| 架构 | aarch64-unknown-linux-musl |"
-            echo "| UPX 压缩 | ${{ inputs.use_upx }} |"
+            echo "| 触发 | ${{ github.event_name }} (`${{ github.ref }}`) |
+            echo "| UPX 压缩 | ${{ inputs.use_upx != false }} |""
             echo ""
             echo "### 产物"
             echo "- \`${{ steps.package.outputs.ota_file }}\`"
